@@ -1,0 +1,7 @@
+Completed .RMD, .R, and data files will be submitted by May 5th, 2022. 
+
+Forecasting Spatial-Temporal Climate Data | Time Series Analysis | R | (in progress)
+• Detrending and deseasonalizing data to display i.i.d. errors by modeling frequency and then isolating the residuals
+• Testing for stationarity, using Dickey-Fuller and KPSS tests, and identify number of differences required for a stationary series
+• Identifying model order and coefficients of AR/MA/ARMA/ARIMA for 918 windmill sites (longitude, latitude) over 40 yrs. of data • Forecasting wind speed one through six-months ahead using ARMA and ARIMA models, test predictions with cross-validation
+• Deep understanding of correlation, covariance structures, and ACF/ACVF/PACF plots
