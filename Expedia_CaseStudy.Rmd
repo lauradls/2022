@@ -1,0 +1,499 @@
+---
+title: "Expedia_CaseStudy"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+
+```{r}
+install.packages("readxl")
+library("readxl")
+#install.packages("dplyr") #SW test
+#library(dplyr)
+
+data <- read_excel("~/Desktop/Expedia/Dataset- (Data Science- Analytics).xlsx")
+
+summary(data)
+head(data)
+
+```
+Please make a note of, and/or resolve for, any data quality issues that you encounter.
+
+
+1) Change the name of the variables/columns, spaces interfere with R syntax. 
+
+```{r}
+names(data) <- gsub(" ", "_", names(data))
+names(data)
+```
+
+
+2) Convert variable type to level so a distinction between groups can be picked up rather than char type. 
+
+```{r}
+data[,c(2:4)] <- lapply(data[,c(2:4)], factor)  ## as.factor() could also be used
+data[,6] <- lapply(data[,6], factor)
+#data$Net_Gross_Booking_Value_USD <-as.numeric(format(data$Net_Gross_Booking_Value_USD, big.mark = ",", scientific = FALSE))   # Apply format function
+
+unique(data$Week)
+
+data$year <- substr(data$Week, 1, 4)
+data$year2<- paste("July", data$year, sep=" ")
+
+data$Value_USD <- round((data$Net_Gross_Booking_Value_USD)/10000,0)
+
+
+summary(data)
+```
+
+look at the population of Regions NA, vs. country NA. Can probably classify some more regions based on country info.
+NA values are not being counted as NA, but as a character instead
+```{r}
+sum(is.na(data$Super_Region))
+```
+
+
+Checking Assumptions
+
+###Visualization
+
+Boxplots
+
+---look at the population where booking window is >0. 
+
+```{r}
+#library(ggplot2)
+
+ggplot(data=data, aes(x=Platform_Type_Name, y=Net_Orders, color=Platform_Type_Name)) +
+  geom_boxplot()+
+  theme_gray()+
+  labs(title = "Boxplot", y="Net Orders")
+
+ggplot(data=data, aes(x=Platform_Type_Name, y=Value_USD, color=Platform_Type_Name)) +
+  geom_boxplot()+
+  theme_gray()+
+    labs(title = "Boxplot", y="Booking Value USD (Ten Thousand)")
+
+ggplot(data=data, aes(x=Mobile_Indicator_Name, y=Net_Orders, color=Mobile_Indicator_Name)) +
+  geom_boxplot()+
+  theme_gray()+
+  labs(title = "Boxplot", y="Net Orders")
+
+
+ggplot(data=data, aes(x=Mobile_Indicator_Name, y=Value_USD, color=Mobile_Indicator_Name)) +
+  geom_boxplot()+
+  theme_gray()+
+    labs(title = "Boxplot", y="Booking Value USD (Ten Thousand)")
+
+```
+
+Histograms
+
+```{r}
+
+ggplot(data, aes(x=Net_Gross_Booking_Value_USD)) + 
+  geom_histogram(bins=1000)
+
+ggplot(data, aes(x=Net_Orders)) + 
+  geom_histogram(bins=1000)
+
+hist(data$Net_Orders)
+hist(data$Net_Gross_Booking_Value_USD)
+
+```
+
+2) Perform a one-way ANOVA how the factor of platform type affects the amount of net orders.
+Perform a one-way ANOVA, see how the factor of mobile indicator name the amount of net orders.
+Ok to do anova, without bonferroni adjustments because of CLT? And we have 73k observations?
+Test against booking value, dollar amount, and net orders. Maybe there difference between the groups lies in the dollar amount and not necessarily the amount of orders. 
+Note that, if you have only two groups, you can use t-test. In this case the F-test and the t-test are equivalent.
+
+
+## Try an independent t-test for Mobile_Indicator_Name since it is only 2 groups
+
+
+ANOVA assumptions:
+-The responses for each factor level have a normal population distribution.
+-These distributions have the same variance.
+-The data are independent.
+
+
+1)Normality
+
+explore two way anova
+
+```{r}
+#One Way ANOVA linear model
+mod_usd <- lm(Net_Gross_Booking_Value_USD ~ Platform_Type_Name, data=data)
+qqnorm(mod_usd$residuals)
+qqline(mod_usd$residuals)
+
+mod_ord <- lm(Net_Orders ~ Platform_Type_Name, data=data)  
+qqnorm(mod_ord$residuals)
+qqline(mod_ord$residuals)
+```
+Did not use the Kolmogorv-Smirnoff test since the data has values that are tied. 
+ks.test(data$Net_Gross_Booking_Value_USD, 'pnorm')
+ks.test(data$Net_Orders, 'pnorm')
+
+Cannot use Shapiro-Wilk test [shapiro_test()] handles smaller sample sizes (2000-5000). Will check normality through QQ-plots. 
+
+2)Variances
+
+Bartlett's is quite sensitive to departure from normality (and thus might only be testing if the samples are normal) while Fligner is a test that is robust to the departure from normality.
+
+```{r}
+# Bartlett Test of Homogeneity of Variances
+bartlett.test(Net_Gross_Booking_Value_USD ~ Mobile_Indicator_Name, data=data)
+bartlett.test(Net_Gross_Booking_Value_USD ~ Platform_Type_Name, data=data)
+bartlett.test(Net_Gross_Booking_Value_USD ~ Super_Region, data=data)
+
+bartlett.test(Net_Orders ~ Mobile_Indicator_Name, data=data)
+bartlett.test(Net_Orders ~ Platform_Type_Name, data=data)
+bartlett.test(Net_Orders ~ Super_Region, data=data)
+
+# Figner-Killeen Test of Homogeneity of Variances
+fligner.test(Net_Gross_Booking_Value_USD ~ Mobile_Indicator_Name, data=data)
+fligner.test(Net_Gross_Booking_Value_USD ~ Platform_Type_Name, data=data)
+fligner.test(Net_Gross_Booking_Value_USD ~ Super_Region, data=data)
+
+fligner.test(Net_Orders ~ Mobile_Indicator_Name, data=data)
+fligner.test(Net_Orders ~ Platform_Type_Name, data=data)
+fligner.test(Net_Orders ~ Super_Region, data=data)
+```
+Based on both test, reject the null hypothesis of homogeneity between variances. 
+
+
+Depending on the model you are using, it may still provide accurate results despite some degree of non-normality. 1-Way ANOVA, for example, is often robust even if the data are not very close to normal. 
+
+
+Null hypothesis: the means of the different groups are the same
+Alternative hypothesis: At least one sample mean is not equal to the others.
+
+```{r}
+# Compute the analysis of variance
+aov1 <- aov(Net_Gross_Booking_Value_USD ~ Mobile_Indicator_Name, data = data)
+# Summary of the analysis
+summary(aov1)
+
+aov1order <- aov(Net_Orders ~ Mobile_Indicator_Name, data = data)
+# Summary of the analysis
+summary(aov1order)
+
+#PLATFORM 2 GROUPS
+
+# Compute the analysis of variance
+aov1 <- aov(Net_Gross_Booking_Value_USD ~ Mobile_Indicator_Name, data = data)
+# Summary of the analysis
+summary(aov1)
+
+aov1order <- aov(Net_Orders ~ Mobile_Indicator_Name, data = data)
+# Summary of the analysis
+summary(aov1order)
+```
+
+Given that the normality and the euqal variances assumption are not met, will conduct a Kruskal-Willis test. 
+Note that, if the above assumptions are not met there are a non-parametric alternative (Kruskal-Wallis test) to the one-way ANOVA.
+```{r}
+
+unique(data$Booking_Window_Group)
+
+
+ggplot(data, aes(x=Net_Orders, y=Booking_Window_Group, size=factor(Net_Order)))+
+         geom_point(stat='identity')+
+    facet_grid(~Super_Region)+
+    theme_classic()
+
+
+ggplot(data, aes(x=Net_Orders, y=Booking_Window_Group, size=Net_Orders))+
+         geom_point(stat='identity')+
+    facet_grid(~Super_Region)+
+    theme_classic()
+
+```
+
+That is from the statistics and data science side. However, from an analytics perspective, here are some additional insights that are helpful for the team. 
+-world map
+
+
+Assumptions ANOVA:
+
+Independence of cases – this is an assumption of the model that simplifies the statistical analysis.
+Normality – the distributions of the residuals are normal.
+Equality (or "homogeneity") of variances, called homoscedasticity
+Assumptions t-test:
+
+Each of the two populations being compared should follow a normal distribution ...
+... the two populations being compared should have the same variance ...
+The data used to carry out the test should be sampled independently from the two populations being compared.
+
+Equal sample sizes are not an assumption for ANOVA
+
+
+
+# Analytics
+
+
+## Answer Key Questions
+
+What does the data suggest regarding how bookings differ by platform and region?
+Interesting to see booking values from countries, region, and in which places people are putting money into booking.
+
+barplot: 2 colors, one for 
+```{r}
+#library(plyr)
+
+sum_value <- function(df=data){
+                return(sum(df$Net_Gross_Booking_Value_USD))
+}
+
+mean_value <- function(df=data){
+                return(mean(df$Net_Gross_Booking_Value_USD))
+}
+
+median_value <- function(df=data){
+                return(median(df$Net_Gross_Booking_Value_USD))
+}
+
+platform <- function(df=data){
+             Desktop <- sum(df$Net_Orders[df$Platform_Type_Name == "Desktop"])
+             MWeb <- sum(df$Net_Orders[df$Platform_Type_Name == "Mobile Web"])
+             MApp <- sum(df$Net_Orders[df$Platform_Type_Name == "Mobile App"])
+                return(matrix(c(Desktop, MWeb, MApp), ncol=3))
+}
+
+orders <- function(df=data){
+          o <- df$Net_Orders
+          return(matrix(c(sum(o), mean(o), median(o)), ncol=3))
+}
+
+platformusd <- function(df=data){
+             Desktop <- sum(df$Net_Gross_Booking_Value_USD[df$Platform_Type_Name == "Desktop"])
+             MWeb <- sum(df$Net_Gross_Booking_Value_USD[df$Platform_Type_Name == "Mobile Web"])
+             MApp <- sum(df$Net_Gross_Booking_Value_USD[df$Platform_Type_Name == "Mobile App"])
+                return(matrix(c(Desktop, MWeb, MApp), ncol=3))
+}
+
+#Per Country Dataset
+datacountry <- daply(data, .(Country_Name),sum_value)
+datacountry <- data.frame(Country_Name = names(datacountry), netUSD = datacountry)
+datacountry$meanUSD <- daply(data, .(Country_Name),mean_value)
+datacountry$medianUSD <- daply(data, .(Country_Name),median_value)
+datacountry$Desktop_ord <- (daply(data, .(Country_Name),platform))[,1]
+datacountry$Mobile_Web_ord <- (daply(data, .(Country_Name),platform))[,2]
+datacountry$Mobile_App_ord <- (daply(data, .(Country_Name),platform))[,3]
+
+##Country, Year, Platform breakdown
+datacountry$DesktopUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,1][,1]
+datacountry$DesktopUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,1][,2]
+datacountry$WebUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,2][,1]
+datacountry$WebUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,2][,2]
+datacountry$AppUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,3][,1]
+datacountry$AppUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,3][,2]
+
+##Country, Year, Platform breakdown
+datacountry$DesktopUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,1][,1]
+datacountry$DesktopUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,1][,2]
+datacountry$WebUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,2][,1]
+datacountry$WebUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,2][,2]
+datacountry$AppUSD_2016 <- (daply(data, .(Country_Name, year),platformusd))[,,3][,1]
+datacountry$AppUSD_2017 <- (daply(data, .(Country_Name, year),platformusd))[,,3][,2]
+
+
+#Growth
+datacountry$GrowthDesktop <- round(100*(datacountry$DesktopUSD_2017 - datacountry$DesktopUSD_2016)/datacountry$DesktopUSD_2016,1)
+datacountry$GrowthWeb <- round(100*(datacountry$WebUSD_2017 - datacountry$WebUSD_2016)/datacountry$WebUSD_2016, 1)
+datacountry$GrowthApp <- round(100*(datacountry$AppUSD_2017 - datacountry$AppUSD_2016)/datacountry$AppUSD_2016, 1)
+
+datacountry$netORDERS <- (daply(data, .(Country_Name),orders))[,1]
+datacountry$meanORDERS <- (daply(data, .(Country_Name),orders))[,2]
+datacountry$medianORDERS <- (daply(data, .(Country_Name),orders))[,3]
+
+
+
+#Per Platform
+dataplat <- daply(data, .(Platform_Type_Name),sum_value)
+dataplat <- data.frame(Platform_Type_Name = names(dataplat), netUSD = dataplat)
+dataplat$meanUSD <- daply(data, .(Platform_Type_Name),mean_value)
+dataplat$medianUSD <- daply(data, .(Platform_Type_Name),median_value)
+dataplat$netORDERS <- (daply(data, .(Platform_Type_Name),orders))[,1]
+dataplat$meanORDERS <- (daply(data, .(Platform_Type_Name),orders))[,2]
+dataplat$medianORDERS <- (daply(data, .(Platform_Type_Name),orders))[,3]
+
+unique(data$Country_Name[data$Super_Region == 'NA'])
+
+```
+
+
+
+Visualization
+```{r}
+
+ggplot(datacountry, aes(x = dose, y = len))+
+  geom_col(aes(fill = supp), width = 0.7)
+
+
+ggplot(data=data, aes(x=factor(Country_Name), y=Net_Orders, fill=factor(Country_Name))) +
+   geom_bar(stat='identity')+
+   facet_grid(~year)+
+   labs(title = "Orders Placed by Platform Type",fill="Country", x="Country", y="Orders")+
+  theme_classic()
+
+#ORDERS
+ggplot(data=data, aes(x=factor(Super_Region), y=Net_Orders, fill=factor(Platform_Type_Name))) +
+   geom_bar(stat='identity')+
+   facet_grid(~year2)+
+   labs(title = "Orders Placed by Platform Type",fill="Platform", x="Region", y="Number of Orders")+
+   scale_y_continuous(breaks = seq(0,1500000,500000),limits = c(0,1500000))+
+ theme_gray()
+
+#USD
+ggplot(data=data, aes(x=factor(Super_Region), y=Value_USD, fill=factor(Platform_Type_Name))) +
+   geom_bar(stat='identity')+
+   facet_grid(~year2)+
+   labs(title = "Booking Value USD by Platform Type",fill="Platform", x="Region", y="USD (Ten Thousands)")+
+    scale_y_continuous(breaks = seq(0,35000,50000),limits = c(0,35000))+
+  scale_fill_brewer(palette="Dark2")+
+  theme_gray()
+
+```
+
+
+
+
+
+
+```{r}
+#Per Region Dataset
+dataregion <- daply(data, .(Super_Region),sum_value)
+dataregion <- data.frame(Super_Region = names(dataregion), netUSD = dataregion)
+dataregion$meanUSD <- daply(data, .(Super_Region),mean_value)
+dataregion$medianUSD <- daply(data, .(Super_Region),median_value)
+dataregion$Desktop <- (daply(data, .(Super_Region),platform))[,1]
+dataregion$Mobile_Web <- (daply(data, .(Super_Region),platform))[,2]
+dataregion$Mobile_App <- (daply(data, .(Super_Region),platform))[,3]
+dataregion$netORDERS <- (daply(data, .(Super_Region),orders))[,1]
+dataregion$meanORDERS <- (daply(data, .(Super_Region),orders))[,2]
+dataregion$medianORDERS <- (daply(data, .(Super_Region),orders))[,3]
+```
+
+
+Where are we seeing the most growth? 
+
+Show growth per region
+
+
+Slight 2% increase in web bookings, 61% decrease in bookings through the app, and 4% increase in mobile web. 
+Taking a closer look at these trends per country, we see that
+
+```{r}
+
+
+
+dataplat$'2016' <- (daply(data, .(Platform_Type_Name, year),sum_value))[,1]
+dataplat$'2017' <- (daply(data, .(Platform_Type_Name, year),sum_value))[,2]
+
+dataplat$growthUSD[1] <- round(((dataplat$'2017'[1]-dataplat$'2016'[1]) / dataplat$'2016'[1])*100, 3)
+dataplat$growthUSD[2] <- round(((dataplat$'2017'[2]-dataplat$'2016'[2]) / dataplat$'2016'[2])*100, 3)
+dataplat$growthUSD[3] <- round(((dataplat$'2017'[3]-dataplat$'2016'[3]) / dataplat$'2016'[3])*100, 3)
+
+dataplat$'20_16' <- (daply(data, .(Platform_Type_Name, year),sum_value))[,1]
+dataplat$'20_17' <- (daply(data, .(Platform_Type_Name, year),sum_value))[,2]
+
+dataplat$growthORDERS
+
+growth <- function(df=data){
+          dataplat
+}
+
+#datacountry <- data.frame(Week = as.Date(names(datacountry), netUSD = datacountry)
+
+Growth <- daply(data, .(Week, Platform_Type_Name),sum_value)
+                          
+                          
+                          
+
+```
+
+Please use any other measures that you think will be insightful. 
+What other data or information would you request to gain additional insight? 
+
+
+## World Heat Map in terms of Gross Booking Value
+  
+```{r}
+
+#install.packages("maps")
+#library(ggplot2)
+#library(dplyr)
+#require(maps)
+#theme_set(
+#  theme_void()
+#  )
+```
+
+```{r}
+#world_map[,7] <- data$Net_Gross_Booking_Value_USD
+#data$Platform_Type_Name
+#data$Country_Name
+#world_map$region
+
+#total amount of gross revenue per country(USD) and per regoin
+
+#ggplot(life.exp.map, aes(long, lat, group = group))+
+#  geom_polygon(aes(fill = lifeExp ), color = "white")+
+#  scale_fill_viridis_c(option = "C")
+```
+
+
+Customers prefer to book bigger orders on their desktop, customers that use their desktop tend to book bigger orders.
+
+
+Visualization about people from a certain region, booking into another region or similar region. Difference between groups? APAC normally books within its own region, vs europe books outside?? What type of thing to market to consumers when the website knows they are in X region, if there is an option to "feeling lucky"... explore expedia website, get familiar with it. 
+
+Is there a difference between the groups of mobile and desktop users? 
+
+Look up Rmarkdown syntax, so the HTML ends up being better
+
+use the map, given that I might have to transofrm my data and lose interpretability: 
+https://rforpoliticalscience.com/2020/09/10/plot-variables-on-a-map-with-rnaturalearth-package-in-r/ 
+
+
+At the end....
+Prediction techniques from linear regression, 
+
+time series? check if an AR1 would work, what to infer upon when seasonality and other have been outstripped?
+plot week (t) vs. (net orders)y, show if there is trend and seasonality based on the graph
+is there a way to code convert variable in months?
+
+if iid with the acf, then my model is capturing what I need. If still not good, then my model is not capturing the variability in the data. 
+
+ML: Should I have apply any ML techniques for this? Helpful for prediction maybe. 
+
+
+## Recommendations
+
+1) "Net Gross Booking Value USD" should be re-valuated, or instead of everything being fed into this variable, to have the ability to see both booking value and value of cancelled reservations. Or this could also be a variable that is only updated with a positive value after the cancellation period has passed and nothing has been cancelled. 
+Avoid: Client booking for 100, cancelling, then booking again for $100, did client did generate 100 in revenue, and not zero or negative like "Net Gross Booking Value" might reflect. 
+Similar idea with net orders. 
+
+What is the process for capturing this flag? What criteria needs to be met? 
+
+2) Booking_Window - Focus analysis on population of customers where the there is a defined booking window, excluding "Other". Using this as a proxy for having data on bookings that actually took place.however, it seems that for everything here, excpt for the "post book" there was a confirmation of checking-in from the hotel. 
+unique(data$Booking_Window_Group)
+
+3) Rename "Net_Gross_Booking_Value_USD", the definition indicates that this is net, not gross. These terms negate each other so I've updated to make it more clear to another data scientist working on the team. 
+
+4) More data in terms of dates, worth 2 years at least. To compare one year over the other. There is a lot of seasonality and trends in travel data, so it is often insufficient to just look at one 1year.  
+
+5) Rename super_region from "NA" to "NAM" representing north america, because NA/NULL are so commonly used in industry to identify missing values, this should be changed as it is very confusing. Double-checked that all countries associated to NA in the dataset are US. 
+
+6) Given that most of the data comes from only a handful of countries, I will refrain from presenting analysis by region, as there is not a big enough country sample from each continent to draw broad representations. 
+
+### Next Steps tied to my Recommendations
+1) Would like to meet with the Data Engineering team, to understand what flags trigger/criteria needs to be met for the "Net Gross Booking Value USD" and "Booking Window" indicators to be satisfied. 
